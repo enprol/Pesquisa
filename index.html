@@ -1386,6 +1386,7 @@ function drawDictionary(doc){
 function presentationFields(row){
   var rural = project.meta.tipoImovel === 'rural';
   var fields = [
+    ['Endereço', row.endereco || '—'],
     ['Município', row.municipio || '—'],
     ['Contato', row.contato || '—'],
     ['Link', row.link || '—'],
@@ -1404,13 +1405,15 @@ function drawPropertyCard(doc, row, idx, x, y, w, h){
   doc.setTextColor(255,255,255);
   doc.setFont('helvetica','bold');
   doc.setFontSize(8.5);
-  doc.text('Pesquisa – ' + String(idx+1).padStart(2,'0') + '   ' + (row.endereco || 'Sem endereço'), x + 3, y + 4.8);
+  doc.text('Pesquisa – ' + String(idx+1).padStart(2,'0'), x + 3, y + 4.8);
 
   doc.setDrawColor(203,213,223);
   doc.setLineWidth(0.3);
   doc.rect(x, y, w, h);
 
-  var imgW = 42, imgX = x + 3, imgY = y + 10, imgH = h - 13;
+  var imgW = (w - 6) * 0.5, imgX = x + 3, imgY = y + 10, imgH = imgW * 3/4;
+  var maxImgH = h - 13;
+  if (imgH > maxImgH){ imgH = maxImgH; imgW = imgH * 4/3; }
   if (row.imagem && row.imagem.dataUrl){
     try {
       var iw = row.imagem.width || 4, ih = row.imagem.height || 3;
