@@ -77,7 +77,7 @@
 
   /* ---------- Overlay / modal shell ---------- */
   .overlay{
-    position:fixed; inset:0; background:rgba(8,21,37,.5); display:flex; align-items:center; justify-content:center;
+    position:fixed; inset:0; background:rgba(8,21,37,.5); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center;
     padding:24px; z-index:50;
   }
   .modal{
@@ -136,6 +136,8 @@
     color:var(--text-secondary);
   }
   .vc-item:hover{background:#fff;}
+  .vc-item.selected{box-shadow:inset 2px 0 0 var(--navy-700);}
+  .vc-item.selected span{color:var(--text-primary); font-weight:600;}
   .vc-item.focused{background:var(--navy-tint); color:var(--navy-900); font-weight:600;}
   .vc-check{
     width:16px;height:16px;border-radius:4px; border:1.5px solid var(--border-strong); flex:none; margin-top:1px;
@@ -374,6 +376,18 @@
 <input type="file" id="input-imagem" accept="image/*" class="hidden">
 <input type="file" id="input-planta-geral" accept="image/*" class="hidden">
 <div class="toast" id="toast"></div>
+
+<template id="__bundler_thumbnail" data-bg-color="#0E2A47">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0E2A47"/>
+    <rect x="300" y="250" width="600" height="60" rx="8" fill="#E7EEF5"/>
+    <rect x="300" y="340" width="600" height="40" rx="6" fill="#1F4F80"/>
+    <rect x="300" y="400" width="600" height="40" rx="6" fill="#163C63"/>
+    <rect x="300" y="460" width="600" height="40" rx="6" fill="#1F4F80"/>
+    <rect x="300" y="520" width="600" height="40" rx="6" fill="#163C63"/>
+    <text x="600" y="180" font-family="Archivo, sans-serif" font-size="54" font-weight="800" fill="#ffffff" text-anchor="middle">ENPROL</text>
+  </svg>
+</template>
 
 <script>
 /* =========================================================================
@@ -770,13 +784,19 @@ function renderVcList(){
       var check = el('div', {class:'vc-check' + (checkOn ? ' on' : '')});
       var nameSpan = el('span', {}, [def.nome]);
       if (def.novo) nameSpan.appendChild(el('span', {class:'badge-new'}, ['novo']));
-      var item = el('div', {class:'vc-item' + (vc.focusedId === def.id ? ' focused' : '')}, [check, nameSpan]);
+      var item = el('div', {class:'vc-item' + (checkOn ? ' selected' : '') + (vc.focusedId === def.id ? ' focused' : ''), tabindex:'0', role:'button', 'aria-pressed':checkOn ? 'true' : 'false'}, [check, nameSpan]);
+      function toggleSel(){
+        vc.selected[def.id] = !vc.selected[def.id];
+        check.classList.toggle('on', vc.selected[def.id]);
+        item.classList.toggle('selected', vc.selected[def.id]);
+        item.setAttribute('aria-pressed', vc.selected[def.id] ? 'true' : 'false');
+        updateVcCount();
+      }
+      item.addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); toggleSel(); }
+      });
       item.addEventListener('click', function(ev){
-        if (ev.target === check){
-          vc.selected[def.id] = !vc.selected[def.id];
-          check.classList.toggle('on', vc.selected[def.id]);
-          updateVcCount();
-        }
+        if (ev.target === check){ toggleSel(); }
         vc.focusedId = def.id;
         renderVcList();
         renderVcRight();
@@ -862,7 +882,7 @@ function renderVcRight(){
     def.classificacao.forEach(function(pair, idx){
       var inpCode = el('input', {class:'kv-code', type:'text', value:pair.codigo, oninput:function(e){ pair.codigo = e.target.value; }});
       var inpLabel = el('input', {class:'kv-label', type:'text', value:pair.rotulo, placeholder:'Rótulo', oninput:function(e){ pair.rotulo = e.target.value; }});
-      var btnDel = el('button', {class:'kv-del', type:'button', onclick:function(){ def.classificacao.splice(idx,1); renderVcRight(); }}, ['✕']);
+      var btnDel = el('button', {class:'kv-del', type:'button', title:'Remover código', 'aria-label':'Remover código', onclick:function(){ def.classificacao.splice(idx,1); renderVcRight(); }}, ['✕']);
       wrap.appendChild(el('div', {class:'kv-row'}, [inpCode, inpLabel, btnDel]));
     });
     var addBtn = el('button', {class:'kv-add', type:'button', onclick:function(){
@@ -1066,7 +1086,7 @@ function renderBody(){
     });
 
     var actionsTd = el('td', {class:'col-actions'});
-    var delBtn = el('button', {class:'row-del-btn', type:'button', title:'Excluir linha'}, ['🗑']);
+    var delBtn = el('button', {class:'row-del-btn', type:'button', title:'Excluir linha', 'aria-label':'Excluir linha'}, ['🗑']);
     delBtn.addEventListener('click', function(){
       if (rowHasData(row)){
         if (!confirm('Esta linha contém dados preenchidos. Deseja realmente excluí-la?')) return;
@@ -1119,7 +1139,7 @@ function renderImgCell(td, row){
   if (row.imagem && row.imagem.dataUrl){
     var chip = el('div', {class:'img-chip'});
     chip.appendChild(el('span', {title:row.imagem.nomeArquivo}, [truncateName(row.imagem.nomeArquivo)]));
-    var rm = el('button', {type:'button', title:'Remover imagem'}, ['✕']);
+    var rm = el('button', {type:'button', title:'Remover imagem', 'aria-label':'Remover imagem'}, ['✕']);
     rm.addEventListener('click', function(){ row.imagem = null; markDirty(); renderImgCell(td, row); });
     chip.appendChild(rm);
     wrap.appendChild(chip);
@@ -1315,9 +1335,8 @@ function drawPage1(doc){
   }
 }
 
-function drawTableAndDictionary(doc){
+function drawDataTable(doc){
   drawHeader(doc);
-  var pw = doc.internal.pageSize.getWidth();
   var cols = fixedColumns().filter(function(c){ return c.type !== 'imagem'; });
   var head = ['#'].concat(cols.map(function(c){ return c.label; })).concat(project.variaveis.map(function(v){ return v.nome; }));
   var body = project.linhas.map(function(row, idx){
@@ -1334,31 +1353,34 @@ function drawTableAndDictionary(doc){
   doc.autoTable({
     head: [head], body: body,
     startY: 26, margin:{left:10, right:10, top:26, bottom:16},
-    styles:{fontSize:6.8, cellPadding:1.6, textColor:[72,88,106], lineColor:[203,213,223], lineWidth:0.15, overflow:'linebreak'},
-    headStyles:{fillColor:[14,42,71], textColor:255, fontStyle:'bold', fontSize:6.8},
+    tableWidth: 'auto',
+    styles:{fontSize:7.4, cellPadding:1.8, textColor:[72,88,106], lineColor:[203,213,223], lineWidth:0.15, overflow:'linebreak', valign:'middle'},
+    headStyles:{fillColor:[14,42,71], textColor:255, fontStyle:'bold', fontSize:7.4, halign:'left'},
     alternateRowStyles:{fillColor:[243,246,248]},
+    columnStyles:{0:{halign:'center', cellWidth:8}},
     showHead:'everyPage',
     didDrawPage: function(){ drawHeader(doc); }
   });
+}
 
-  var y = doc.lastAutoTable.finalY + 10;
+function drawDictionary(doc){
+  drawHeader(doc);
+  var pw = doc.internal.pageSize.getWidth();
   var ph = doc.internal.pageSize.getHeight();
-  if (project.variaveis.length){
-    if (y > ph - 40){ doc.addPage('a4','portrait'); drawHeader(doc); y = 28; }
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(14,42,71);
-    doc.text('Dicionário de variáveis', 10, y); y += 7;
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(72,88,106);
-    project.variaveis.forEach(function(v){
-      var legend = (v.tipo === 'qualitativa' || v.tipo === 'dicotomica') && v.classificacao && v.classificacao.length
-        ? ' — ' + v.classificacao.map(function(c){ return c.codigo + '=' + c.rotulo; }).join('; ')
-        : '';
-      var text = v.nome + ': ' + (v.descricao || '') + legend;
-      var lines = doc.splitTextToSize(text, pw - 20);
-      if (y + lines.length*3.6 > ph - 16){ doc.addPage('a4','portrait'); drawHeader(doc); y = 28; }
-      doc.text(lines, 10, y);
-      y += lines.length*3.6 + 3;
-    });
-  }
+  var y = 28;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(14,42,71);
+  doc.text('Dicionário de variáveis', 10, y); y += 7;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(72,88,106);
+  project.variaveis.forEach(function(v){
+    var legend = (v.tipo === 'qualitativa' || v.tipo === 'dicotomica') && v.classificacao && v.classificacao.length
+      ? ' — ' + v.classificacao.map(function(c){ return c.codigo + '=' + c.rotulo; }).join('; ')
+      : '';
+    var text = v.nome + ': ' + (v.descricao || '') + legend;
+    var lines = doc.splitTextToSize(text, pw - 20);
+    if (y + lines.length*3.6 > ph - 16){ doc.addPage('a4','portrait'); drawHeader(doc); y = 28; }
+    doc.text(lines, 10, y);
+    y += lines.length*3.6 + 3;
+  });
 }
 
 function presentationFields(row){
@@ -1445,8 +1467,12 @@ $('#btn-gerar-pdf').addEventListener('click', function(){
     if (!jsPDFCtor){ alert('Não foi possível carregar o gerador de PDF (verifique a conexão com a internet).'); return; }
     var doc = new jsPDFCtor({orientation:'landscape', unit:'mm', format:'a4'});
     drawPage1(doc);
-    doc.addPage('a4','portrait');
-    drawTableAndDictionary(doc);
+    doc.addPage('a4','landscape');
+    drawDataTable(doc);
+    if (project.variaveis.length){
+      doc.addPage('a4','portrait');
+      drawDictionary(doc);
+    }
     doc.addPage('a4','portrait');
     drawPresentationPages(doc);
     stampFooters(doc);
