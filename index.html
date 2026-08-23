@@ -234,7 +234,9 @@
   .cell-input:hover{border-color:var(--border);}
   .cell-input:focus{border-color:var(--navy-700); background:#fff; outline:none;}
   select.cell-input{min-width:120px;}
-  input.cell-input[type=number]{min-width:90px; text-align:right; font-variant-numeric:tabular-nums;}
+  input.cell-input[type=number], input.cell-input.mask-num{min-width:90px; text-align:right; font-variant-numeric:tabular-nums;}
+  input.cell-input.mask-fone{min-width:120px; font-variant-numeric:tabular-nums;}
+  input.cell-input.mask-utm{min-width:195px; font-family:var(--font-mono); font-size:11px;}
   .unit-suffix{font-size:10px; color:var(--text-muted); margin-left:3px;}
   td.calc-cell{
     background:var(--navy-tint) !important; font-style:italic; color:var(--navy-800); text-align:right; font-variant-numeric:tabular-nums;
@@ -491,9 +493,9 @@ var PRESETS_RURAL = [
   V('r_regularidade','Regularidade fundiária','Grau de regularidade documental do imóvel.','qualitativa','documentacao',{classificacao:QN(['Baixa','Regular','Boa'])}),
 
   V('r_oferta_transacao','Oferta/Transação','Natureza do valor observado.','dicotomica','preco_transacao',{classificacao:D('Oferta','Transação')}),
-  V('r_data_oferta','Data da oferta/transação','Data do registro do valor.','texto','preco_transacao',{isDate:true}),
+  V('r_data_oferta','Data da oferta/transação','Data do registro do valor.','texto','preco_transacao',{formato:'data'}),
   V('r_nota_agronomica','Nota Agronômica','Índice de qualidade e potencial produtivo do imóvel rural.','quantitativa','preco_transacao',{uni:'un',dec:4}),
-  V('r_coordenadas','Coordenadas geográficas','Coordenadas UTM ou Lat/Long do imóvel.','texto','preco_transacao',{novo:true})
+  V('r_coordenadas','Coordenadas geográficas','Coordenadas UTM ou Lat/Long do imóvel.','texto','preco_transacao',{novo:true, formato:'utm'})
 ];
 
 var PRESETS_URBANO = [
@@ -539,8 +541,8 @@ var PRESETS_URBANO = [
   V('u_pavimentacao','Pavimentação','Tipo de pavimentação.','qualitativa','infra_urbana',{classificacao:QN(['Terra','Paralelepípedo','Asfalto','Concreto'])}),
 
   V('u_oferta_transacao','Oferta/Transação','Natureza do dado.','dicotomica','preco_transacao',{classificacao:D('Oferta','Transação')}),
-  V('u_data','Data','Data da oferta/transação.','texto','preco_transacao',{isDate:true}),
-  V('u_coordenadas','Coordenadas geográficas','Coordenadas UTM ou Lat/Long do imóvel.','texto','preco_transacao',{novo:true})
+  V('u_data','Data','Data da oferta/transação.','texto','preco_transacao',{formato:'data'}),
+  V('u_coordenadas','Coordenadas geográficas','Coordenadas UTM ou Lat/Long do imóvel.','texto','preco_transacao',{novo:true, formato:'utm'})
 ];
 
 var UNIT_LABEL = {ha:'ha', m2:'m²', m:'m', km:'km', pct:'%', rs:'R$', ano:'anos', un:''};
@@ -590,6 +592,66 @@ function slugify(str){
 function formatBR(n, dec){
   if (n === null || n === undefined || isNaN(n)) return '';
   return Number(n).toLocaleString('pt-BR', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+}
+
+/* -------------------------------------------------------------------------
+   MÁSCARAS DE PREENCHIMENTO (área, preço, quantitativas, telefone, UTM)
+   ------------------------------------------------------------------------- */
+function applyNumberMask(raw, dec){
+  dec = dec == null ? 2 : dec;
+  var digits = (raw || '').replace(/\D/g, '');
+  digits = digits.replace(/^0+(?=\d)/, '');
+  if (digits === '') return {display:'', value:null};
+  while (digits.length <= dec) digits = '0' + digits;
+  var cut = dec > 0 ? digits.length - dec : digits.length;
+  var intPart = digits.slice(0, cut).replace(/^0+(?=\d)/, '') || '0';
+  var decPart = dec > 0 ? digits.slice(cut) : '';
+  var intFmt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  var display = dec > 0 ? (intFmt + ',' + decPart) : intFmt;
+  var value = parseFloat(intPart + (dec > 0 ? '.' + decPart : ''));
+  return {display: display, value: isNaN(value) ? null : value};
+}
+function attachNumberMask(inp, getDec, onChange){
+  inp.setAttribute('inputmode', 'decimal');
+  inp.addEventListener('input', function(e){
+    var res = applyNumberMask(e.target.value, typeof getDec === 'function' ? getDec() : getDec);
+    e.target.value = res.display;
+    onChange(res.value);
+  });
+}
+function applyPhoneMask(raw){
+  var d = (raw || '').replace(/\D/g, '').slice(0, 11);
+  if (d.length === 0) return '';
+  if (d.length <= 2) return '(' + d;
+  if (d.length <= 6) return '(' + d.slice(0,2) + ') ' + d.slice(2);
+  if (d.length <= 10) return '(' + d.slice(0,2) + ') ' + d.slice(2,6) + '-' + d.slice(6);
+  return '(' + d.slice(0,2) + ') ' + d.slice(2,7) + '-' + d.slice(7);
+}
+function attachPhoneMask(inp, onChange){
+  inp.setAttribute('inputmode', 'tel');
+  inp.addEventListener('input', function(e){
+    var display = applyPhoneMask(e.target.value);
+    e.target.value = display;
+    onChange(display);
+  });
+}
+var UTM_TEMPLATE = '999999.99 m E / 9999999.99 m S';
+function applyTemplateMask(raw, template){
+  var digits = (raw || '').replace(/\D/g, '');
+  var out = '', di = 0;
+  for (var i = 0; i < template.length && di < digits.length; i++){
+    var ch = template[i];
+    if (ch === '9'){ out += digits[di]; di++; }
+    else { out += ch; }
+  }
+  return out;
+}
+function attachTemplateMask(inp, template, onChange){
+  inp.addEventListener('input', function(e){
+    var display = applyTemplateMask(e.target.value, template);
+    e.target.value = display;
+    onChange(display);
+  });
 }
 function showToast(msg){
   var t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -706,7 +768,7 @@ $('#input-abrir-json').addEventListener('change', function(e){
       if (!project.plantaGeral) project.plantaGeral = null;
       currentFileHandle = null;
       rowSeq = 1;
-      project.linhas.forEach(function(r){ r._key = 'row_' + (rowSeq++); if (!r.valores) r.valores = {}; });
+      project.linhas.forEach(function(r){ r._key = 'row_' + (rowSeq++); if (!r.valores) r.valores = {}; if (r.informante == null) r.informante = ''; });
       $('#screen-welcome').classList.add('hidden');
       $('#modal-varconfig').classList.add('hidden');
       showTableScreen();
@@ -893,13 +955,15 @@ function renderVcRight(){
     wrap.appendChild(addBtn);
     right.appendChild(wrap);
   } else if (def.tipo === 'texto'){
-    var chkWrap = el('label', {style:'display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-secondary);font-weight:500;text-transform:none;letter-spacing:0;'});
-    var chk = el('input', {type:'checkbox'});
-    chk.checked = !!def.isDate;
-    chk.addEventListener('change', function(e){ def.isDate = e.target.checked; });
-    chkWrap.appendChild(chk);
-    chkWrap.appendChild(document.createTextNode('Este campo representa uma data'));
-    right.appendChild(el('div', {class:'vr-field'}, [el('label', {}, ['Formato']), chkWrap]));
+    if (!def.formato) def.formato = def.isDate ? 'data' : 'livre';
+    var selFormato = el('select', {onchange:function(e){ def.formato = e.target.value; }});
+    var formatoOpts = [['livre','Texto livre'],['data','Data'],['utm','Coordenada UTM']];
+    formatoOpts.forEach(function(fo){
+      var o = el('option', {value:fo[0]}, [fo[1]]);
+      if (fo[0] === def.formato) o.setAttribute('selected','selected');
+      selFormato.appendChild(o);
+    });
+    right.appendChild(el('div', {class:'vr-field'}, [el('label', {}, ['Formato']), selFormato]));
   }
 
   if (def.origem === 'personalizada'){
@@ -953,7 +1017,7 @@ $('#btn-vc-ok').addEventListener('click', function(){
     var clean = {id:d.id, nome:d.nome, descricao:d.descricao, tipo:d.tipo, origem:d.origem};
     if (d.tipo === 'quantitativa'){ clean.uni = d.uni || 'un'; clean.dec = d.dec != null ? d.dec : 2; }
     if (d.tipo === 'qualitativa' || d.tipo === 'dicotomica'){ clean.classificacao = (d.classificacao || []).map(function(p){ return {codigo:p.codigo, rotulo:p.rotulo}; }); }
-    if (d.tipo === 'texto'){ clean.isDate = !!d.isDate; }
+    if (d.tipo === 'texto'){ clean.formato = d.formato || (d.isDate ? 'data' : 'livre'); }
     return clean;
   });
 
@@ -972,7 +1036,7 @@ $('#btn-vc-ok').addEventListener('click', function(){
 });
 
 function newRow(){
-  return {_key:'row_' + (rowSeq++), endereco:'', municipio:'', contato:'', link:'', imagem:null,
+  return {_key:'row_' + (rowSeq++), endereco:'', municipio:'', informante:'', contato:'', link:'', imagem:null,
     areaImovel:null, areaConstruida:null, precoTotal:null, precoUnitario:null, valores:{}};
 }
 
@@ -995,7 +1059,8 @@ function fixedColumns(){
   return [
     {key:'endereco', label:'Endereço', type:'texto', wide:true},
     {key:'municipio', label:'Município', type:'texto'},
-    {key:'contato', label:'Contato', type:'texto'},
+    {key:'informante', label:'Informante', type:'texto'},
+    {key:'contato', label:'Telefone', type:'fone'},
     {key:'link', label:'Link', type:'link'},
     {key:'imagem', label:'Imagem', type:'imagem'},
     {key:'areaImovel', label: rural ? 'Área do imóvel (ha)' : 'Área do terreno (m²)', type:'num', dec: rural ? 4 : 2, uni: rural ? 'ha' : 'm2'},
@@ -1021,7 +1086,7 @@ function renderTable(){
 }
 
 function rowHasData(row){
-  if (row.endereco || row.municipio || row.contato || row.link || row.imagem) return true;
+  if (row.endereco || row.municipio || row.informante || row.contato || row.link || row.imagem) return true;
   if (row.areaImovel != null || row.areaConstruida != null || row.precoTotal != null) return true;
   return Object.keys(row.valores || {}).some(function(k){ var v = row.valores[k]; return v !== null && v !== undefined && v !== ''; });
 }
@@ -1058,12 +1123,16 @@ function renderBody(){
         td.appendChild(inpL);
       } else if (c.type === 'imagem'){
         renderImgCell(td, row);
+      } else if (c.type === 'fone'){
+        var inpF = el('input', {class:'cell-input mask-fone', type:'text', placeholder:'(00) 00000-0000'});
+        inpF.value = row[c.key] || '';
+        attachPhoneMask(inpF, function(display){ row[c.key] = display; markDirty(); });
+        td.appendChild(inpF);
       } else if (c.type === 'num'){
-        var inpN = el('input', {class:'cell-input', type:'number', step: c.dec ? (1/Math.pow(10,c.dec)) : 1});
-        inpN.value = row[c.key] != null ? row[c.key] : '';
-        inpN.addEventListener('input', function(e){
-          var v = e.target.value === '' ? null : parseFloat(e.target.value);
-          row[c.key] = (v === null || isNaN(v)) ? null : v;
+        var inpN = el('input', {class:'cell-input mask-num', type:'text'});
+        inpN.value = row[c.key] != null ? formatBR(row[c.key], c.dec) : '';
+        attachNumberMask(inpN, c.dec, function(val){
+          row[c.key] = val;
           recalcPrecoUnitario(row);
           var calcCell = tr.querySelector('.calc-cell');
           if (calcCell) calcCell.textContent = row.precoUnitario != null ? formatBR(row.precoUnitario, 2) : '—';
@@ -1106,11 +1175,10 @@ function renderBody(){
 function renderVarCell(td, row, v){
   var current = row.valores[v.id];
   if (v.tipo === 'quantitativa'){
-    var inp = el('input', {class:'cell-input', type:'number', step: v.dec ? (1/Math.pow(10,v.dec)) : 1});
-    inp.value = current != null ? current : '';
-    inp.addEventListener('input', function(e){
-      var val = e.target.value === '' ? null : parseFloat(e.target.value);
-      row.valores[v.id] = (val === null || isNaN(val)) ? null : val;
+    var inp = el('input', {class:'cell-input mask-num', type:'text'});
+    inp.value = current != null ? formatBR(current, v.dec != null ? v.dec : 2) : '';
+    attachNumberMask(inp, v.dec != null ? v.dec : 2, function(val){
+      row.valores[v.id] = val;
       markDirty();
     });
     td.appendChild(inp);
@@ -1126,10 +1194,23 @@ function renderVarCell(td, row, v){
     sel.addEventListener('change', function(e){ row.valores[v.id] = e.target.value === '' ? null : e.target.value; markDirty(); });
     td.appendChild(sel);
   } else if (v.tipo === 'texto'){
-    var inpT = el('input', {class:'cell-input', type: v.isDate ? 'date' : 'text'});
-    inpT.value = current || '';
-    inpT.addEventListener('input', function(e){ row.valores[v.id] = e.target.value; markDirty(); });
-    td.appendChild(inpT);
+    var formato = v.formato || (v.isDate ? 'data' : 'livre');
+    if (formato === 'data'){
+      var inpD = el('input', {class:'cell-input', type:'date'});
+      inpD.value = current || '';
+      inpD.addEventListener('input', function(e){ row.valores[v.id] = e.target.value; markDirty(); });
+      td.appendChild(inpD);
+    } else if (formato === 'utm'){
+      var inpU = el('input', {class:'cell-input mask-utm', type:'text', placeholder:'999999.99 m E / 9999999.99 m S'});
+      inpU.value = current || '';
+      attachTemplateMask(inpU, UTM_TEMPLATE, function(display){ row.valores[v.id] = display; markDirty(); });
+      td.appendChild(inpU);
+    } else {
+      var inpT = el('input', {class:'cell-input', type:'text'});
+      inpT.value = current || '';
+      inpT.addEventListener('input', function(e){ row.valores[v.id] = e.target.value; markDirty(); });
+      td.appendChild(inpT);
+    }
   }
 }
 
@@ -1246,6 +1327,16 @@ var LOGO_DATAURL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAB4AAAAHgCAYAAA
 var LOGO_ASPECT = 1920/480;
 (function(){ var img = document.getElementById('welcome-logo'); if (img) img.src = LOGO_DATAURL; })();
 
+var FOOTER_H = 24;
+var ENDERECOS_EMPRESA = [
+  {cidade:'Fortaleza-CE', endereco:'Av. Des. Moreira, n° 1300, T. Norte, Conj. 1016/1021, Aldeota, 60.170-002', tel:'(+55 85) 3289-6363'},
+  {cidade:'Eusébio-CE', endereco:'Rua Irmã Ambrosina, nº 249, Conj 03 e 04, Centro, 61.760-405', tel:'(+55 85) 3289-6363'},
+  {cidade:'Belo Horizonte-MG', endereco:'Rua Araguari, nº 358, Conj.1903/1904, Barro Preto, 30.190-110', tel:'(+55 31) 3253-5500'},
+  {cidade:'Vitória-ES', endereco:'Rua Des. Mário da Silva Nunes, nº 120, Sala 201, Enseada do Suá, 29.050-240', tel:'(+55 27) 3029-5540'},
+  {cidade:'Belém-PA', endereco:'Rua Avertano Rocha, n°192, Campina, 66.023-120', tel:'(+55 94) 3346-8994'}
+];
+var EMAIL_EMPRESA = 'comercial@enprol.com.br';
+
 function imgFormatFromDataUrl(dataUrl){
   if (!dataUrl) return 'PNG';
   if (dataUrl.indexOf('data:image/jpeg') === 0 || dataUrl.indexOf('data:image/jpg') === 0) return 'JPEG';
@@ -1284,14 +1375,23 @@ function stampFooters(doc){
     var pw = doc.internal.pageSize.getWidth();
     var ph = doc.internal.pageSize.getHeight();
     var margin = 10;
+    var topY = ph - FOOTER_H;
     doc.setDrawColor(159,176,190);
     doc.setLineWidth(0.3);
-    doc.line(margin, ph - 14, pw - margin, ph - 14);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(76,90,102);
-    doc.text('ENPROL · ' + (project.meta.responsavelTecnico || ''), margin, ph - 9);
-    doc.text('Página ' + p + ' de ' + total, pw - margin, ph - 9, {align:'right'});
+    doc.line(margin, topY, pw - margin, topY);
+    var lineY = topY + 4.6;
+    ENDERECOS_EMPRESA.forEach(function(o){
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.6);
+      doc.setTextColor(14,42,71);
+      var prefix = o.cidade + '  —  ';
+      doc.text(prefix, margin, lineY);
+      var prefixW = doc.getTextWidth(prefix);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(90,102,114);
+      doc.text(o.endereco + '   ·   ' + o.tel + '   ·   ' + EMAIL_EMPRESA, margin + prefixW, lineY);
+      lineY += 3.1;
+    });
   }
 }
 
@@ -1317,7 +1417,7 @@ function drawPage1(doc){
   doc.setTextColor(14,42,71);
   doc.text('Planta geral de dados de mercado', margin, 27);
 
-  var areaX = margin, areaY = 31, areaW = pw - margin*2, areaH = ph - 31 - 16;
+  var areaX = margin, areaY = 31, areaW = pw - margin*2, areaH = ph - 31 - FOOTER_H;
   if (project.plantaGeral && project.plantaGeral.dataUrl){
     var iw = project.plantaGeral.width || 4, ih = project.plantaGeral.height || 3;
     var fit = fitBox(iw, ih, areaW, areaH);
@@ -1352,7 +1452,7 @@ function drawDataTable(doc){
 
   doc.autoTable({
     head: [head], body: body,
-    startY: 26, margin:{left:10, right:10, top:26, bottom:16},
+    startY: 26, margin:{left:10, right:10, top:26, bottom:FOOTER_H},
     tableWidth: 'auto',
     styles:{fontSize:7.4, cellPadding:1.8, textColor:[72,88,106], lineColor:[203,213,223], lineWidth:0.15, overflow:'linebreak', valign:'middle'},
     headStyles:{fillColor:[14,42,71], textColor:255, fontStyle:'bold', fontSize:7.4, halign:'left'},
@@ -1361,13 +1461,27 @@ function drawDataTable(doc){
     showHead:'everyPage',
     didDrawPage: function(){ drawHeader(doc); }
   });
+
+  if (project.variaveis.length){
+    drawDictionaryInline(doc);
+  }
 }
 
-function drawDictionary(doc){
-  drawHeader(doc);
+function drawDictionaryInline(doc){
   var pw = doc.internal.pageSize.getWidth();
   var ph = doc.internal.pageSize.getHeight();
-  var y = 28;
+  var bottomLimit = ph - FOOTER_H;
+  var y = doc.lastAutoTable.finalY + 9;
+
+  if (y > bottomLimit - 14){
+    doc.addPage('a4','landscape');
+    drawHeader(doc);
+    pw = doc.internal.pageSize.getWidth();
+    ph = doc.internal.pageSize.getHeight();
+    bottomLimit = ph - FOOTER_H;
+    y = 28;
+  }
+
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(14,42,71);
   doc.text('Dicionário de variáveis', 10, y); y += 7;
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(72,88,106);
@@ -1377,26 +1491,83 @@ function drawDictionary(doc){
       : '';
     var text = v.nome + ': ' + (v.descricao || '') + legend;
     var lines = doc.splitTextToSize(text, pw - 20);
-    if (y + lines.length*3.6 > ph - 16){ doc.addPage('a4','portrait'); drawHeader(doc); y = 28; }
+    if (y + lines.length*3.6 > bottomLimit){
+      doc.addPage('a4','landscape');
+      drawHeader(doc);
+      pw = doc.internal.pageSize.getWidth();
+      ph = doc.internal.pageSize.getHeight();
+      bottomLimit = ph - FOOTER_H;
+      y = 28;
+    }
     doc.text(lines, 10, y);
     y += lines.length*3.6 + 3;
   });
 }
 
-function presentationFields(row){
+function presentationBlocks(row){
   var rural = project.meta.tipoImovel === 'rural';
-  var fields = [
+  var usedVarIds = {};
+  var varsByFormato = function(formato){
+    return project.variaveis.filter(function(v){
+      if (v.tipo !== 'texto') return false;
+      var f = v.formato || (v.isDate ? 'data' : 'livre');
+      return f === formato;
+    });
+  };
+  var dataVars = varsByFormato('data');
+  var utmVars = varsByFormato('utm');
+
+  var top = [
     ['Endereço', row.endereco || '—'],
-    ['Município', row.municipio || '—'],
-    ['Contato', row.contato || '—'],
-    ['Link', row.link || '—'],
+    ['Município', row.municipio || '—']
+  ];
+  dataVars.forEach(function(v){ top.push([v.nome, labelForValue(v, row.valores[v.id])]); usedVarIds[v.id] = true; });
+  top.push(['Link', row.link || '—']);
+  utmVars.forEach(function(v){ top.push([v.nome, labelForValue(v, row.valores[v.id])]); usedVarIds[v.id] = true; });
+  top.push(['Informante', row.informante || '—']);
+  top.push(['Telefone', row.contato || '—']);
+
+  var bottom = [
     [rural ? 'Área do imóvel' : 'Área do terreno', row.areaImovel != null ? formatBR(row.areaImovel, rural?4:2) + ' ' + (rural?'ha':'m²') : '—'],
     ['Área construída', row.areaConstruida != null ? formatBR(row.areaConstruida, 2) + ' m²' : '—'],
     ['Preço total', row.precoTotal != null ? 'R$ ' + formatBR(row.precoTotal, 2) : '—'],
     ['Preço unitário', row.precoUnitario != null ? 'R$ ' + formatBR(row.precoUnitario, 2) : '—']
   ];
-  project.variaveis.forEach(function(v){ fields.push([v.nome, labelForValue(v, row.valores[v.id])]); });
-  return fields;
+  project.variaveis.forEach(function(v){
+    if (usedVarIds[v.id]) return;
+    bottom.push([v.nome, labelForValue(v, row.valores[v.id])]);
+  });
+
+  return {top: top, bottom: bottom};
+}
+
+function drawFieldBlock(doc, fields, x, y, w, h){
+  var colW = (w - 3) / 2;
+  var bottomLimit = y + h - 3;
+  var col = 0, tx = x, ty = y + 3;
+  doc.setFontSize(6.8);
+  for (var i = 0; i < fields.length; i++){
+    var label = fields[i][0], value = fields[i][1];
+    var lines = doc.splitTextToSize(String(value), colW - 2);
+    var neededH = 3 + lines.length*3 + 1.6;
+    if (ty + neededH > bottomLimit){
+      if (col === 0 && x + colW + 3 + colW <= x + w + 0.01){
+        col = 1; tx = x + colW + 3; ty = y + 3;
+      }
+      if (ty + neededH > bottomLimit){
+        var remaining = fields.length - i;
+        doc.setFont('helvetica','italic'); doc.setFontSize(6.2); doc.setTextColor(140,150,160);
+        doc.text('+' + remaining + ' campo(s) não exibido(s) por falta de espaço', tx, Math.min(ty, bottomLimit + 2.5));
+        doc.setFontSize(6.8);
+        break;
+      }
+    }
+    doc.setFont('helvetica','bold'); doc.setTextColor(14,42,71);
+    doc.text(label + ':', tx, ty);
+    doc.setFont('helvetica','normal'); doc.setTextColor(72,88,106);
+    doc.text(lines, tx, ty + 3);
+    ty += neededH;
+  }
 }
 
 function drawPropertyCard(doc, row, idx, x, y, w, h){
@@ -1405,15 +1576,13 @@ function drawPropertyCard(doc, row, idx, x, y, w, h){
   doc.setTextColor(255,255,255);
   doc.setFont('helvetica','bold');
   doc.setFontSize(8.5);
-  doc.text('Pesquisa – ' + String(idx+1).padStart(2,'0'), x + 3, y + 4.8);
+  doc.text('Pesquisa – ' + String(idx+1).padStart(2,'0') + '   ' + (row.endereco || 'Sem endereço'), x + 3, y + 4.8);
 
   doc.setDrawColor(203,213,223);
   doc.setLineWidth(0.3);
   doc.rect(x, y, w, h);
 
-  var imgW = (w - 6) * 0.5, imgX = x + 3, imgY = y + 10, imgH = imgW * 3/4;
-  var maxImgH = h - 13;
-  if (imgH > maxImgH){ imgH = maxImgH; imgW = imgH * 4/3; }
+  var imgW = 42, imgX = x + 3, imgY = y + 10, imgH = h - 13;
   if (row.imagem && row.imagem.dataUrl){
     try {
       var iw = row.imagem.width || 4, ih = row.imagem.height || 3;
@@ -1428,27 +1597,28 @@ function drawPropertyCard(doc, row, idx, x, y, w, h){
     doc.text('sem imagem', imgX + imgW/2, imgY + imgH/2, {align:'center'});
   }
 
-  var fields = presentationFields(row);
-  var colW = (w - (imgW + 8) - 3) / 2;
-  var col = 0, tx = imgX + imgW + 5, ty = imgY + 3;
-  doc.setFontSize(6.8);
-  fields.forEach(function(f){
-    var label = f[0], value = f[1];
-    doc.setFont('helvetica','bold'); doc.setTextColor(14,42,71);
-    doc.text(label + ':', tx, ty);
-    doc.setFont('helvetica','normal'); doc.setTextColor(72,88,106);
-    var lines = doc.splitTextToSize(String(value), colW - 2);
-    doc.text(lines, tx, ty + 3);
-    ty += 3 + lines.length*3 + 1.6;
-    if (ty > imgY + imgH - 3 && col === 0){ col = 1; tx = imgX + imgW + 5 + colW + 3; ty = imgY + 3; }
-  });
+  var blocks = presentationBlocks(row);
+  var textX = imgX + imgW + 5;
+  var textW = w - (imgW + 8) - 3;
+  var textY = imgY;
+  var textH = imgH;
+  var gap = 3;
+  var topH = Math.round(textH * 0.52);
+  var bottomY = textY + topH + gap;
+  var bottomH = textH - topH - gap;
+
+  drawFieldBlock(doc, blocks.top, textX, textY, textW, topH);
+  doc.setDrawColor(226,232,238);
+  doc.setLineWidth(0.25);
+  doc.line(textX, textY + topH + gap/2, textX + textW, textY + topH + gap/2);
+  drawFieldBlock(doc, blocks.bottom, textX, bottomY, textW, bottomH);
 }
 
 function drawPresentationPages(doc){
   var pw = doc.internal.pageSize.getWidth();
   var ph = doc.internal.pageSize.getHeight();
   var margin = 10;
-  var cardH = (ph - 26 - 16 - 8) / 2;
+  var cardH = (ph - 26 - FOOTER_H - 8) / 2;
   var allRows = project.linhas.map(function(r,i){ return {row:r, idx:i}; });
 
   allRows.forEach(function(o, i){
@@ -1472,10 +1642,6 @@ $('#btn-gerar-pdf').addEventListener('click', function(){
     drawPage1(doc);
     doc.addPage('a4','landscape');
     drawDataTable(doc);
-    if (project.variaveis.length){
-      doc.addPage('a4','portrait');
-      drawDictionary(doc);
-    }
     doc.addPage('a4','portrait');
     drawPresentationPages(doc);
     stampFooters(doc);
