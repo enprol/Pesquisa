@@ -1370,6 +1370,7 @@ function drawHeader(doc){
 
 function stampFooters(doc){
   var total = doc.internal.getNumberOfPages();
+  var fontSize = 7;
   for (var p = 1; p <= total; p++){
     doc.setPage(p);
     var pw = doc.internal.pageSize.getWidth();
@@ -1379,18 +1380,27 @@ function stampFooters(doc){
     doc.setDrawColor(159,176,190);
     doc.setLineWidth(0.3);
     doc.line(margin, topY, pw - margin, topY);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(fontSize);
+    doc.setTextColor(64,72,82);
+
+    // colunas alinhadas como uma tabela: endereço completo | telefone | e-mail
+    var colGap = 6;
+    var maxAddrW = 0, maxTelW = 0;
+    ENDERECOS_EMPRESA.forEach(function(o){
+      maxAddrW = Math.max(maxAddrW, doc.getTextWidth(o.endereco + ', ' + o.cidade));
+      maxTelW = Math.max(maxTelW, doc.getTextWidth(o.tel));
+    });
+    var telX = margin + maxAddrW + colGap;
+    var emailX = telX + maxTelW + colGap;
+
     var lineY = topY + 4.6;
     ENDERECOS_EMPRESA.forEach(function(o){
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.6);
-      doc.setTextColor(14,42,71);
-      var prefix = o.cidade + '  —  ';
-      doc.text(prefix, margin, lineY);
-      var prefixW = doc.getTextWidth(prefix);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(90,102,114);
-      doc.text(o.endereco + '   ·   ' + o.tel + '   ·   ' + EMAIL_EMPRESA, margin + prefixW, lineY);
-      lineY += 3.1;
+      doc.text(o.endereco + ', ' + o.cidade, margin, lineY);
+      doc.text(o.tel, telX, lineY);
+      doc.text(EMAIL_EMPRESA, emailX, lineY);
+      lineY += 3.4;
     });
   }
 }
