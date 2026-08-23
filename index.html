@@ -1582,7 +1582,9 @@ function drawPropertyCard(doc, row, idx, x, y, w, h){
   doc.setLineWidth(0.3);
   doc.rect(x, y, w, h);
 
-  var imgW = 42, imgX = x + 3, imgY = y + 10, imgH = h - 13;
+  var pad = 3, colGap = 5;
+  var halfW = (w - pad*2 - colGap) / 2;
+  var imgW = halfW, imgX = x + pad, imgY = y + 10, imgH = h - 13;
   if (row.imagem && row.imagem.dataUrl){
     try {
       var iw = row.imagem.width || 4, ih = row.imagem.height || 3;
@@ -1598,8 +1600,8 @@ function drawPropertyCard(doc, row, idx, x, y, w, h){
   }
 
   var blocks = presentationBlocks(row);
-  var textX = imgX + imgW + 5;
-  var textW = w - (imgW + 8) - 3;
+  var textX = imgX + imgW + colGap;
+  var textW = halfW;
   var textY = imgY;
   var textH = imgH;
   var gap = 3;
